@@ -33,6 +33,7 @@ from common.utils.sam import SAM
 sys.path.append('.')
 import utils
 
+from torchinfo import summary
 
 def main(args: argparse.Namespace):
     logger = CompleteLogger(args.log, args.phase)
@@ -85,11 +86,12 @@ def main(args: argparse.Namespace):
     # create model
     print("=> using model '{}'".format(args.arch))
     backbone = utils.get_model(args.arch, pretrain=not args.scratch)
-    print(backbone)
     pool_layer = nn.Identity() if args.no_pool else None
     classifier = ImageClassifier(backbone, num_classes, bottleneck_dim=args.bottleneck_dim,
                                  pool_layer=pool_layer, finetune=not args.scratch).to(device)
     classifier_feature_dim = classifier.features_dim
+
+    summary(classifier,(1,3,224,224))
 
     if args.randomized:
         domain_discri = DomainDiscriminator(
@@ -243,8 +245,9 @@ def train(train_source_iter: ForeverDataIterator, train_target_iter: ForeverData
         mcc_loss_value = mcc(y_t)
         y_t_masked, _ = model(x_t_masked)
         if teacher.pseudo_label_weight is not None:
+            mask = pseudo_prob_t.ge(args.th).float()
             ce = F.cross_entropy(y_t_masked, pseudo_label_t, reduction='none')
-            masking_loss_value = torch.mean(pseudo_prob_t * ce)
+            masking_loss_value = torch.mean(pseudo_prob_t * ce * mask)
         else:
             masking_loss_value = F.cross_entropy(y_t_masked, pseudo_label_t)
         loss = cls_loss + mcc_loss_value + masking_loss_value
@@ -261,8 +264,11 @@ def train(train_source_iter: ForeverDataIterator, train_target_iter: ForeverData
 
         cls_loss = F.cross_entropy(y_s, labels_s)
         y_t_masked, _ = model(x_t_masked)
+        ce = F.cross_entropy(y_t_masked, pseudo_label_t, reduction='none')
+        masking_loss_value = torch.mean( ce * mask)
+
         transfer_loss = domain_adv(y_s, f_s, y_t, f_t) + mcc(y_t) + \
-                        F.cross_entropy(y_t_masked, pseudo_label_t)
+                        masking_loss_value
         domain_acc = domain_adv.domain_discriminator_accuracy
         loss = cls_loss + transfer_loss * args.trade_off
 
@@ -385,6 +391,9 @@ if __name__ == '__main__':
     parser.add_argument('--mask_color_jitter_s', default=0, type=float)
     parser.add_argument('--mask_color_jitter_p', default=0, type=float)
     parser.add_argument('--mask_blur', default=False, type=bool)
+
+    # Threshold
+    parser.add_argument('--th', default=0.1, type=float)
 
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu

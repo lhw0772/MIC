@@ -30,7 +30,7 @@ from common.utils.sam import SAM
 
 sys.path.append('.')
 import utils
-
+from torchinfo import summary
 
 def main(args: argparse.Namespace):
     logger = CompleteLogger(args.log, args.phase)
@@ -100,7 +100,7 @@ def main(args: argparse.Namespace):
     base_optimizer = torch.optim.SGD
     ad_optimizer = SGD(domain_discri.get_parameters(
     ), args.lr, momentum=args.momentum, weight_decay=args.weight_decay, nesterov=True)
-    optimizer = SAM(classifier.get_parameters(), base_optimizer, rho=args.rho, adaptive=False,
+    optimizer = SAM(classifier.get_parameters(args.lr), base_optimizer, rho=args.rho, adaptive=False,
                     lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay, nesterov=True)
     lr_scheduler = LambdaLR(optimizer, lambda x: args.lr *
                             (1. + args.lr_gamma * float(x)) ** (-args.lr_decay))
@@ -113,6 +113,8 @@ def main(args: argparse.Namespace):
         num_classes=num_classes, features_dim=classifier_feature_dim, randomized=args.randomized,
         randomized_dim=args.randomized_dim
     ).to(device)
+
+    print ("classifier_feature_dim:",classifier_feature_dim)
 
     mcc_loss = MinimumClassConfusionLoss(temperature=args.temperature)
 
@@ -202,6 +204,10 @@ def train(train_source_iter: ForeverDataIterator, train_target_iter: ForeverData
     domain_adv.train()
 
     end = time.time()
+
+    #print (summary(model, (1, 3, 224, 224)))
+
+
     for i in range(args.iters_per_epoch):
         x_s, labels_s = next(train_source_iter)
         x_t, _ = next(train_target_iter)
