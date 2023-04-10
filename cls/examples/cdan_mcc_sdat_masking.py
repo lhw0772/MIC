@@ -265,8 +265,8 @@ def train(train_source_iter: ForeverDataIterator, train_target_iter: ForeverData
         cls_loss = F.cross_entropy(y_s, labels_s)
         y_t_masked, _ = model(x_t_masked)
         ce = F.cross_entropy(y_t_masked, pseudo_label_t, reduction='none')
-        masking_loss_value = torch.mean( ce * mask)
-
+        mask = pseudo_prob_t.ge(args.th).float()
+        masking_loss_value = torch.mean(ce * mask)
         transfer_loss = domain_adv(y_s, f_s, y_t, f_t) + mcc(y_t) + \
                         masking_loss_value
         domain_acc = domain_adv.domain_discriminator_accuracy
